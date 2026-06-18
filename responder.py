@@ -3,34 +3,46 @@ from config import GROQ_API_KEY, LLM_MODEL
 
 _client = Groq(api_key=GROQ_API_KEY)
 
+_SYSTEM_PROMPTS = {
+    "safe": """You are a helpful home repair assistant. The user's question has been classified as safe for DIY.
+Provide clear, specific, actionable step-by-step instructions. Include the tools and materials needed.
+Be thorough — a motivated homeowner should be able to complete this repair from your answer alone.""",
+
+    "caution": """You are a careful home repair assistant. The user's question involves a repair that is doable for a motivated homeowner, but where mistakes have real cost.
+
+Begin your response with a brief, direct caution: explain what can go wrong and under what conditions they should hire a professional instead of proceeding.
+
+Then provide step-by-step instructions integrated with safety warnings at the specific steps where errors are most likely. Do not bury warnings at the end — place them where they matter.
+
+End with a clear recommendation: if at any point they are unsure, stop and call a licensed plumber or electrician.""",
+
+    "refuse": """You are a home repair safety assistant. The user's question involves work that requires a licensed professional — amateur mistakes can cause fire, flooding, structural failure, serious injury, or death.
+
+Do NOT provide any steps, procedures, or instructions for how to do this work — not even general guidance, not even to explain what a professional would do, not even framed as educational context.
+
+Do NOT provide partial instructions followed by a recommendation to hire a professional. Providing any procedural content defeats the safety purpose.
+
+Instead:
+1. Clearly explain WHY this specific repair requires a licensed professional (name the actual risk: fire hazard, explosion risk, structural collapse, etc.)
+2. Tell them exactly what type of licensed professional to contact (electrician, plumber, structural engineer, etc.)
+3. If there is a safety-critical immediate action they should take RIGHT NOW (e.g. shut off the main breaker, evacuate, call 911), state that first and clearly.""",
+}
+
+_FALLBACK_PROMPT = _SYSTEM_PROMPTS["caution"]
+
 
 def generate_safe_response(question: str, tier: str) -> str:
-    """
-    Generate a response to a home repair question, calibrated to its safety tier.
+    system_prompt = _SYSTEM_PROMPTS.get(tier, _FALLBACK_PROMPT)
 
-    TODO — Milestone 2:
-
-    Before writing any code, complete specs/responder-spec.md. The most important
-    fields are the three system prompts — one per tier. Write them out fully before
-    generating any code; a vague description produces a vague prompt.
-
-    `tier` is one of "safe", "caution", or "refuse" — returned by classify_safety_tier().
-
-    Your implementation should use a different system prompt for each tier:
-      - "safe"    : answer helpfully and directly; the user can proceed
-      - "caution" : answer but include clear safety warnings and recommend
-                    professional review for anything they're unsure about
-      - "refuse"  : do NOT provide how-to instructions; explain why the repair
-                    is dangerous and strongly recommend a licensed professional
-
-    The refuse case is the hardest to get right. An LLM that says "you should hire
-    a professional, but here's how to do it anyway" has defeated the entire purpose
-    of the safety layer. Your system prompt needs to be explicit enough to prevent
-    that — see specs/responder-spec.md for the design decision field on grounding.
-
-    If tier is unrecognized (e.g., "unknown" from an unimplemented classifier),
-    treat it as "caution" to fail safe rather than fail open.
-
-    Return the response as a plain string.
-    """
-    return "⚙️ Response generation not yet implemented. Complete Milestone 2 to activate answers."
+    try:
+        response = _client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question},
+            ],
+            temperature=0.3,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Unable to generate a response at this time. Please try again. (Error: {e})"
